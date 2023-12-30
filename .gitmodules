@@ -1,0 +1,3 @@
+[submodule "repos/segment-anything"]
+	path = repos/SAM
+	url = https://github.com/facebookresearch/segment-anything
