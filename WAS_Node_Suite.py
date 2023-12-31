@@ -25,6 +25,7 @@ import comfy.sd
 import comfy.utils
 import comfy.clip_vision
 import comfy.model_management
+import folder_paths
 import folder_paths as comfy_paths
 from comfy_extras.chainner_models import model_loading
 import glob
@@ -3717,9 +3718,11 @@ class WAS_Image_Grid_Image:
         
     @classmethod
     def INPUT_TYPES(cls):
+        input_dir = folder_paths.get_input_directory()
+        files = [f for f in os.listdir(input_dir) if os.path.isfile(os.path.join(input_dir, f))]
         return {
             "required": {
-                "images_path": ("STRING", {"default":"./ComfyUI/input/", "multiline": False}),
+                "images_path": (files,),
                 "pattern_glob": ("STRING", {"default":"*", "multiline": False}),
                 "include_subfolders": (["false", "true"],),
                 "border_width": ("INT", {"default":3, "min": 0, "max": 100, "step":1}),
@@ -3730,6 +3733,12 @@ class WAS_Image_Grid_Image:
                 "border_blue": ("INT", {"default":0, "min": 0, "max": 255, "step":1}),
             }
         }
+
+    @classmethod
+    def VALIDATE_INPUTS(s, **kwargs):
+        if not folder_paths.exists_annotated_filepath(kwargs.get("images_path")):
+            return "Invalid image file: {}".format(kwargs.get("images_path"))
+        return True
         
     RETURN_TYPES = ("IMAGE",)
     FUNCTION = "create_grid_image"
@@ -3739,11 +3748,11 @@ class WAS_Image_Grid_Image:
     def create_grid_image(self, images_path, pattern_glob="*", include_subfolders="false", number_of_columns=6, 
                             max_cell_size=256, border_width=3, border_red=0, border_green=0, border_blue=0):
     
-        if not os.path.exists(images_path):
+        if not os.path.exists(folder_paths.get_annotated_filepath(images_path)):
             cstr(f"The grid image path `{images_path}` does not exist!").error.print()
             return (pil2tensor(Image.new("RGB", (512,512), (0,0,0))),)
         
-        paths = glob.glob(os.path.join(images_path, pattern_glob), recursive=(False if include_subfolders == "false" else True))
+        paths = glob.glob(os.path.join(folder_paths.get_annotated_filepath(images_path), pattern_glob), recursive=(False if include_subfolders == "false" else True))
         image_paths = []
         for path in paths:
             if path.lower().endswith(ALLOWED_EXT) and os.path.exists(path):
@@ -3839,7 +3848,7 @@ class WAS_Image_Morph_GIF:
                 "duration_ms": ("FLOAT", {"default":0.1, "min":0.1, "max":60000.0, "step":0.1}),
                 "loops": ("INT", {"default":0, "min":0, "max":100, "step":1}),
                 "max_size": ("INT", {"default":512, "min":128, "max":1280, "step":1}),
-                "output_path": ("STRING", {"default": "./ComfyUI/output", "multiline": False}),
+                #"output_path": ("STRING", {"default": "./ComfyUI/output", "multiline": False}),
                 "filename": ("STRING", {"default": "morph", "multiline": False}),
                 "filetype": (["GIF", "APNG"],),
             }
@@ -3856,7 +3865,7 @@ class WAS_Image_Morph_GIF:
     CATEGORY = "WAS Suite/Animation"
     
     def create_morph_gif(self, image_a, image_b, transition_frames=10, still_image_delay_ms=10, duration_ms=0.1, loops=0, max_size=512, 
-                            output_path="./ComfyUI/output", filename="morph", filetype="GIF"):
+                            output_path=folder_paths.get_output_directory(), filename="morph", filetype="GIF"):
                 
         tokens = TextTokens()
         WTools = WAS_Tools_Class()
@@ -3886,6 +3895,8 @@ class WAS_Image_Morph_GIF:
             duration_ms = 0.1
         elif duration_ms > 60000.0:
             duration_ms = 60000.0
+
+        filename = os.path.basename(filename)
                         
         output_file = WTools.morph_images([tensor2pil(image_a), tensor2pil(image_b)], steps=int(transition_frames), max_size=int(max_size), loop=int(loops), 
                             still_duration=int(still_image_delay_ms), duration=int(duration_ms), output_path=output_path,
@@ -3910,7 +3921,7 @@ class WAS_Image_Morph_GIF_Writer:
                 "duration_ms": ("FLOAT", {"default":0.1, "min":0.1, "max":60000.0, "step":0.1}),
                 "loops": ("INT", {"default":0, "min":0, "max":100, "step":1}),
                 "max_size": ("INT", {"default":512, "min":128, "max":1280, "step":1}),
-                "output_path": ("STRING", {"default": comfy_paths.output_directory, "multiline": False}),
+                #"output_path": ("STRING", {"default": comfy_paths.output_directory, "multiline": False}),
                 "filename": ("STRING", {"default": "morph_writer", "multiline": False}),
             }
         }
@@ -3926,7 +3937,7 @@ class WAS_Image_Morph_GIF_Writer:
     CATEGORY = "WAS Suite/Animation/Writer"
     
     def write_to_morph_gif(self, image, transition_frames=10, image_delay_ms=10, duration_ms=0.1, loops=0, max_size=512, 
-                            output_path="./ComfyUI/output", filename="morph"):
+                            output_path=folder_paths.get_output_directory(), filename="morph"):
         
         if 'imageio' not in packages():
             install_package("imageio")
@@ -3949,6 +3960,7 @@ class WAS_Image_Morph_GIF_Writer:
             
         tokens = TextTokens()
         output_path = os.path.abspath(os.path.join(*tokens.parseTokens(output_path).split('/')))
+        filename = os.path.basename(filename)
         output_file = os.path.join(output_path, tokens.parseTokens(filename) + '.gif')
         
         if not os.path.exists(output_path):
@@ -3971,6 +3983,8 @@ class WAS_Image_Morph_GIF_By_Path:
         
     @classmethod
     def INPUT_TYPES(cls):
+        input_dir = folder_paths.get_input_directory()
+        files = [f for f in os.listdir(input_dir) if os.path.isfile(os.path.join(input_dir, f))]
         return {
             "required": {
                 "transition_frames": ("INT", {"default":30, "min":2, "max":60, "step":1}),
@@ -3978,9 +3992,9 @@ class WAS_Image_Morph_GIF_By_Path:
                 "duration_ms": ("FLOAT", {"default":0.1, "min":0.1, "max":60000.0, "step":0.1}),
                 "loops": ("INT", {"default":0, "min":0, "max":100, "step":1}),
                 "max_size": ("INT", {"default":512, "min":128, "max":1280, "step":1}),
-                "input_path": ("STRING",{"default":"./ComfyUI", "multiline": False}),
+                "input_path": (files,),
                 "input_pattern": ("STRING",{"default":"*", "multiline": False}),
-                "output_path": ("STRING", {"default": "./ComfyUI/output", "multiline": False}),
+                #"output_path": ("STRING", {"default": "./ComfyUI/output", "multiline": False}),
                 "filename": ("STRING", {"default": "morph", "multiline": False}),
                 "filetype": (["GIF", "APNG"],),
             }
@@ -3989,6 +4003,12 @@ class WAS_Image_Morph_GIF_By_Path:
     @classmethod
     def IS_CHANGED(cls, **kwargs):
         return float("NaN")
+
+    @classmethod
+    def VALIDATE_INPUTS(s, **kwargs):
+        if not folder_paths.exists_annotated_filepath(kwargs.get("input_path")):
+            return "Invalid image file: {}".format(kwargs.get("input_path"))
+        return True
         
     RETURN_TYPES = (TEXT_TYPE,TEXT_TYPE)
     RETURN_NAMES = ("filepath_text","filename_text")
@@ -3997,16 +4017,16 @@ class WAS_Image_Morph_GIF_By_Path:
     CATEGORY = "WAS Suite/Animation"
     
     def create_morph_gif(self, transition_frames=30, still_image_delay_ms=2500, duration_ms=0.1, loops=0, max_size=512, 
-                            input_path="./ComfyUI/output", input_pattern="*", output_path="./ComfyUI/output", filename="morph", filetype="GIF"):
+                            input_path="./ComfyUI/output", input_pattern="*", output_path=folder_paths.get_output_directory(), filename="morph", filetype="GIF"):
                 
         if 'imageio' not in packages():
             install_package("imageio")
                 
-        if not os.path.exists(input_path):
+        if not os.path.exists(folder_paths.get_annotated_filepath(input_path)):
             cstr(f"The input_path `{input_path}` does not exist!").error.print()
             return ("",)
             
-        images = self.load_images(input_path, input_pattern)
+        images = self.load_images(folder_paths.get_annotated_filepath(input_path), input_pattern)
         if not images:
             cstr(f"The input_path `{input_path}` does not contain any valid images!").msg.print()
             return ("",)
@@ -4028,6 +4048,7 @@ class WAS_Image_Morph_GIF_By_Path:
             
         tokens = TextTokens()
         WTools = WAS_Tools_Class()
+        filename = os.path.basename(filename)
             
         output_file = WTools.morph_images(images, steps=int(transition_frames), max_size=int(max_size), loop=int(loops), still_duration=int(still_image_delay_ms), 
                                             duration=int(duration_ms), output_path=tokens.parseTokens(os.path.join(*output_path.split('/'))),
@@ -5062,12 +5083,14 @@ class WAS_Load_Image_Batch:
             
     @classmethod
     def INPUT_TYPES(cls):
+        input_dir = folder_paths.get_input_directory()
+        files = [f for f in os.listdir(input_dir) if os.path.isfile(os.path.join(input_dir, f))]
         return {
             "required": {
                 "mode": (["single_image", "incremental_image", "random"],),
                 "index": ("INT", {"default": 0, "min": 0, "max": 150000, "step": 1}),
                 "label": ("STRING", {"default": 'Batch 001', "multiline": False}),
-                "path": ("STRING", {"default": '', "multiline": False}),
+                "path": (files, ),
                 "pattern": ("STRING", {"default": '*', "multiline": False}),
                 "allow_RGBA_output": (["false","true"],),
             },
@@ -5075,6 +5098,12 @@ class WAS_Load_Image_Batch:
                 "filename_text_extension": (["true", "false"],),
             }
         }
+
+    @classmethod
+    def VALIDATE_INPUTS(s, **kwargs):
+        if not folder_paths.exists_annotated_filepath(kwargs.get("path")):
+            return "Invalid image file: {}".format(kwargs.get("path"))
+        return True
 
     RETURN_TYPES = ("IMAGE",TEXT_TYPE)
     RETURN_NAMES = ("image","filename_text")
@@ -5086,9 +5115,9 @@ class WAS_Load_Image_Batch:
     
         allow_RGBA_output = (allow_RGBA_output == 'true')
         
-        if not os.path.exists(path):
+        if not os.path.exists(folder_paths.get_annotated_filepath(path)):
             return (None, )
-        fl = self.BatchImageLoader(path, label, pattern)
+        fl = self.BatchImageLoader(folder_paths.get_annotated_filepath(path), label, pattern)
         new_paths = fl.image_paths
         if mode == 'single_image':
             image, filename = fl.get_image_by_id(index)
@@ -7077,7 +7106,7 @@ class WAS_Image_Save:
         return {
             "required": {
                 "images": ("IMAGE", ),
-                "output_path": ("STRING", {"default": '[time(%Y-%m-%d)]', "multiline": False}),
+                #"output_path": ("STRING", {"default": '[time(%Y-%m-%d)]', "multiline": False}),
                 "filename_prefix": ("STRING", {"default": "ComfyUI"}),
                 "filename_delimiter": ("STRING", {"default":"_"}),
                 "filename_number_padding": ("INT", {"default":4, "min":1, "max":9, "step":1}),
@@ -7121,15 +7150,15 @@ class WAS_Image_Save:
         filename_prefix = tokens.parseTokens(filename_prefix)
 
         # Setup output path
-        if output_path in [None, '', "none", "."]:
-            output_path = self.output_dir
-        else:
-            output_path = tokens.parseTokens(output_path)
-        if not os.path.isabs(output_path):
-            output_path = os.path.join(self.output_dir, output_path)
-        base_output = os.path.basename(output_path)
-        if output_path.endswith("ComfyUI/output") or output_path.endswith("ComfyUI\output"):
-            base_output = ""
+        # if output_path in [None, '', "none", "."]:
+        #     output_path = self.output_dir
+        # else:
+        #     output_path = tokens.parseTokens(output_path)
+        # if not os.path.isabs(output_path):
+        output_path = os.path.join(self.output_dir, output_path)
+        #base_output = os.path.basename(output_path)
+        # if output_path.endswith("ComfyUI/output") or output_path.endswith("ComfyUI\output"):
+        #     base_output = ""
 
         # Check output destination
         if output_path.strip() != '':
@@ -7312,15 +7341,23 @@ class WAS_Load_Image:
 
     @classmethod
     def INPUT_TYPES(cls):
+        input_dir = folder_paths.get_input_directory()
+        files = [f for f in os.listdir(input_dir) if os.path.isfile(os.path.join(input_dir, f))]
         return {
                 "required": {
-                    "image_path": ("STRING", {"default": './ComfyUI/input/example.png', "multiline": False}), 
+                    "image_path": (files, ),
                     "RGBA": (["false","true"],),
                 },
                 "optional": {
                     "filename_text_extension": (["true", "false"],),
                 }
             }
+
+    @classmethod
+    def VALIDATE_INPUTS(s, **kwargs):
+        if not folder_paths.exists_annotated_filepath(kwargs.get("image_path")):
+            return "Invalid image file: {}".format(kwargs.get("image_path"))
+        return True
 
     RETURN_TYPES = ("IMAGE", "MASK", TEXT_TYPE)
     RETURN_NAMES = ("image", "mask", "filename_text")
@@ -7337,7 +7374,7 @@ class WAS_Load_Image:
             i = self.download_image(image_path)
         else:
             try:
-                i = Image.open(image_path)
+                i = Image.open(folder_paths.get_annotated_filepath(image_path))
             except OSError:
                 cstr(f"The image `{image_path.strip()}` specified doesn't exist!").error.print()
                 i = Image.new(mode='RGB', size=(512, 512), color=(0, 0, 0))
@@ -13071,7 +13108,7 @@ class WAS_Video_Writer:
                 "image_delay_sec": ("FLOAT", {"default":2.5, "min":0.1, "max":60000.0, "step":0.1}),
                 "fps": ("INT", {"default":30, "min":1, "max":60.0, "step":1}),
                 "max_size": ("INT", {"default":512, "min":128, "max":1920, "step":1}),
-                "output_path": ("STRING", {"default": "./ComfyUI/output", "multiline": False}),
+                #"output_path": ("STRING", {"default": "./ComfyUI/output", "multiline": False}),
                 "filename": ("STRING", {"default": "comfy_writer", "multiline": False}),
                 "codec": (codecs,),
             }
@@ -13088,7 +13125,7 @@ class WAS_Video_Writer:
     CATEGORY = "WAS Suite/Animation/Writer"
     
     def write_video(self, image, transition_frames=10, image_delay_sec=10, fps=30, max_size=512, 
-                            output_path="./ComfyUI/output", filename="morph", codec="H264"):
+                            output_path=folder_paths.get_output_directory(), filename="morph", codec="H264"):
         
         conf = getSuiteConfig()
         if not conf.__contains__('ffmpeg_bin_path'):
@@ -13125,6 +13162,7 @@ class WAS_Video_Writer:
                 
             tokens = TextTokens()
             output_path = os.path.abspath(os.path.join(*tokens.parseTokens(output_path).split('/')))
+            filename = os.path.basename(filename)
             output_file = os.path.join(output_path, tokens.parseTokens(filename))
             
             if not os.path.exists(output_path):
@@ -13161,14 +13199,16 @@ class WAS_Create_Video_From_Path:
         for codec in v.get_codecs():
             codecs.append(codec.upper())
         codecs = sorted(codecs)
+        input_dir = folder_paths.get_input_directory()
+        files = [f for f in os.listdir(input_dir) if os.path.isfile(os.path.join(input_dir, f))]
         return {
             "required": {
                 "transition_frames": ("INT", {"default":30, "min":0, "max":120, "step":1}),
                 "image_delay_sec": ("FLOAT", {"default":2.5, "min":0.01, "max":60000.0, "step":0.01}),
                 "fps": ("INT", {"default":30, "min":1, "max":60.0, "step":1}),
                 "max_size": ("INT", {"default":512, "min":128, "max":1920, "step":1}),
-                "input_path": ("STRING", {"default": "./ComfyUI/input", "multiline": False}),
-                "output_path": ("STRING", {"default": "./ComfyUI/output", "multiline": False}),
+                "input_path": (files,),
+                #"output_path": ("STRING", {"default": "./ComfyUI/output", "multiline": False}),
                 "filename": ("STRING", {"default": "comfy_video", "multiline": False}),
                 "codec": (codecs,),
             }
@@ -13177,6 +13217,12 @@ class WAS_Create_Video_From_Path:
     @classmethod
     def IS_CHANGED(cls, **kwargs):
         return float("NaN")
+
+    @classmethod
+    def VALIDATE_INPUTS(s, **kwargs):
+        if not folder_paths.exists_annotated_filepath(kwargs.get("input_path")):
+            return "Invalid image file: {}".format(kwargs.get("input_path"))
+        return True
         
     RETURN_TYPES = (TEXT_TYPE,TEXT_TYPE)
     RETURN_NAMES = ("filepath_text","filename_text")
@@ -13185,7 +13231,7 @@ class WAS_Create_Video_From_Path:
     CATEGORY = "WAS Suite/Animation"
     
     def create_video_from_path(self, transition_frames=10, image_delay_sec=10, fps=30, max_size=512, 
-                            input_path="./ComfyUI/input", output_path="./ComfyUI/output", filename="morph", codec="H264"):
+                            input_path="./ComfyUI/input", output_path=folder_paths.get_output_directory(), filename="morph", codec="H264"):
         
         conf = getSuiteConfig()
         if not conf.__contains__('ffmpeg_bin_path'):
@@ -13224,7 +13270,7 @@ class WAS_Create_Video_From_Path:
         
         WTools = WAS_Tools_Class()
         MP4Writer = WTools.VideoWriter(int(transition_frames), int(fps), int(image_delay_sec), max_size, codec)
-        path = MP4Writer.create_video(input_path, output_file)
+        path = MP4Writer.create_video(folder_paths.get_annotated_filepath(input_path), os.path.join(output_path, os.path.basename(output_file)))
         
         return (path, filename)   
         
@@ -13236,15 +13282,23 @@ class WAS_Video_Frame_Dump:
         
     @classmethod
     def INPUT_TYPES(cls):
+        input_dir = folder_paths.get_input_directory()
+        files = [f for f in os.listdir(input_dir) if os.path.isfile(os.path.join(input_dir, f))]
         return {
             "required": {
-                "video_path": ("STRING", {"default":"./ComfyUI/input/MyVideo.mp4", "multiline":False}),
-                "output_path": ("STRING", {"default": "./ComfyUI/input/MyVideo", "multiline": False}),
+                "video_path": (files,),
+                "output_path": ("STRING", {"default": "MyVideo", "multiline": False}),
                 "prefix": ("STRING", {"default": "frame_", "multiline": False}),
                 "filenumber_digits": ("INT", {"default":4, "min":-1, "max":8, "step":1}),
                 "extension": (["png","jpg","gif","tiff"],),
             }
         }
+
+    @classmethod
+    def VALIDATE_INPUTS(s, **kwargs):
+        if not folder_paths.exists_annotated_filepath(kwargs.get("video_path")):
+            return "Invalid image file: {}".format(kwargs.get("video_path"))
+        return True
         
     @classmethod
     def IS_CHANGED(cls, **kwargs):
@@ -13273,12 +13327,12 @@ class WAS_Video_Frame_Dump:
             output_path = "./ComfyUI/input/frames"
             
         tokens = TextTokens()
-        output_path = os.path.abspath(os.path.join(*tokens.parseTokens(output_path).split('/')))
+        output_path = os.path.join(folder_paths.get_output_directory(), os.path.basename(output_path)) #os.path.abspath(os.path.join(*tokens.parseTokens(output_path).split('/')))
         prefix = tokens.parseTokens(prefix)
 
         WTools = WAS_Tools_Class()
         MP4Writer = WTools.VideoWriter()
-        processed = MP4Writer.extract(video_path, output_path, prefix, extension,filenumber_digits)
+        processed = MP4Writer.extract(folder_paths.get_annotated_filepath(video_path), output_path, prefix, extension,filenumber_digits)
         
         return (output_path, processed)
         
